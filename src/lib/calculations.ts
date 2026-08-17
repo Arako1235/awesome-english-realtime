@@ -3,6 +3,8 @@ import { v4 as uuid } from "uuid";
 import type { AppData, RecurringTaskRule, Task, TaskCategory, TimeSession, WeeklyMetric, WeeklyReport, WeeklyTarget } from "./types";
 import { inWeek, minutesBetweenIso, nowIso, todaySeoul, weekEndSeoul, weekStartSeoul } from "./time";
 
+export const taskCategories: TaskCategory[] = ["RUN", "GROW", "BUILD", "IDEA"];
+
 export const categoryMeta: Record<TaskCategory, { label: string; color: string; bg: string; icon: string }> = {
   RUN: { label: "유지업무", color: "#4f83a6", bg: "#e7f0f6", icon: "Gauge" },
   GROW: { label: "매출업무", color: "#3d9b72", bg: "#e6f4ed", icon: "TrendingUp" },
@@ -95,17 +97,69 @@ export function getWeeklyMetric(data: AppData, weekStart = weekStartSeoul()): We
 }
 
 function buildWarnings(totals: ReturnType<typeof categoryTotals>, targetMap: Record<TaskCategory, number>) {
-  const warnings: string[] = [];
-  const runDiff = totals.RUN.actual - targetMap.RUN;
-  const growDiff = targetMap.GROW - totals.GROW.actual;
-  if (runDiff >= 120 || growDiff >= 120) {
-    warnings.push(`이번 주는 RUN 업무가 목표보다 ${Math.round(runDiff / 60)}시간 많고 GROW 업무가 ${Math.round(growDiff / 60)}시간 부족합니다. 다음 주 수·목 13:00~15:00를 GROW 전용시간으로 보호해보세요.`);
-  } else if (runDiff >= 60) {
-    warnings.push(`RUN 시간이 목표보다 ${Math.round(runDiff / 60)}시간 많습니다. 반복 유지업무 중 줄일 수 있는 서식화 후보를 하나만 골라보세요.`);
-  } else if (growDiff >= 60) {
-    warnings.push(`GROW 시간이 목표보다 ${Math.round(growDiff / 60)}시간 부족합니다. 이번 주 핵심 매출 행동 1개를 먼저 배치해보세요.`);
-  }
-  return warnings;
+  const comparison = buildCategoryComparison(totals, targetMap)
+    .filter((item) => item.status !== "met")
+    .sort((a, b) => b.minutes - a.minutes)
+    .slice(0, 2);
+  if (!comparison.length) return [];
+  return [`이번 주는 ${joinKoreanClauses(comparison.map((item, index) => categoryComparisonPhrase(item, index > 0)))}. ${categoryRecommendation(comparison)}`];
+}
+
+export type CategoryComparison = {
+  category: TaskCategory;
+  actual: number;
+  target: number;
+  diff: number;
+  minutes: number;
+  status: "short" | "over" | "met";
+};
+
+export function buildCategoryComparison(totals: ReturnType<typeof categoryTotals>, targetMap: Record<TaskCategory, number>): CategoryComparison[] {
+  return taskCategories.map((category) => {
+    const actual = totals[category].actual;
+    const target = targetMap[category];
+    const diff = actual - target;
+    return {
+      category,
+      actual,
+      target,
+      diff,
+      minutes: Math.abs(diff),
+      status: diff < 0 ? "short" : diff > 0 ? "over" : "met"
+    };
+  });
+}
+
+export function formatDurationKo(minutes: number) {
+  const rounded = Math.round(Math.abs(minutes));
+  const hours = Math.floor(rounded / 60);
+  const rest = rounded % 60;
+  if (hours && rest) return `${hours}시간 ${rest}분`;
+  if (hours) return `${hours}시간`;
+  return `${rest}분`;
+}
+
+export function categoryComparisonPhrase(item: CategoryComparison, useAlso = false) {
+  const subject = `${item.category} 업무${useAlso ? "도" : "가"}`;
+  if (item.status === "short") return `${subject} 목표보다 ${formatDurationKo(item.minutes)} 부족합니다`;
+  if (item.status === "over") return `${subject} 목표보다 ${formatDurationKo(item.minutes)} 초과했습니다`;
+  return `${subject} 목표시간을 달성했습니다`;
+}
+
+function joinKoreanClauses(clauses: string[]) {
+  if (clauses.length <= 1) return clauses[0] ?? "";
+  const leading = clauses.slice(0, -1).map((clause) => clause
+    .replace(/부족합니다$/, "부족하고")
+    .replace(/초과했습니다$/, "초과했고")
+    .replace(/달성했습니다$/, "달성했고"));
+  return `${leading.join(", ")}, ${clauses[clauses.length - 1]}`;
+}
+
+function categoryRecommendation(items: CategoryComparison[]) {
+  if (items.some((item) => item.category === "GROW" && item.status === "short")) return "이번 주 핵심 매출 행동 1개를 먼저 배치해보세요.";
+  if (items.some((item) => item.category === "RUN" && item.status === "over")) return "반복 유지업무 중 줄일 수 있는 서식화 후보를 하나만 골라보세요.";
+  if (items.some((item) => item.category === "BUILD" && item.status === "short")) return "반복 업무를 줄일 작은 시스템화 작업을 하나만 정해보세요.";
+  return "다음 주 시간 배분을 조금 더 균형 있게 조정해보세요.";
 }
 
 export function nextOccurrence(rule: RecurringTaskRule, fromDate = rule.nextOccurrenceDate) {
@@ -194,7 +248,7 @@ export function makeReportDraft(data: AppData, weekStart = weekStartSeoul(), now
     ...(["RUN", "GROW", "BUILD", "IDEA"] as TaskCategory[]).map((cat) => `- ${cat}: 실제 ${summary.totals[cat].actual}분 / 목표 ${summary.targetMap[cat]}분`),
     "",
     "## 계획 대비 부족하거나 초과한 분야",
-    summary.warnings[0] ?? "- 큰 편차는 없습니다. 현재 리듬을 유지해도 좋습니다.",
+    summary.warnings[0] ?? "- 모든 분류가 목표시간을 달성했습니다.",
     "",
     "## 이번 주 주요 성과",
     `- 완료 업무 ${summary.completedCount}개, 완료 GROW 업무 ${summary.growCompleted}개`,
