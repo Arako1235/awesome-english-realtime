@@ -320,7 +320,7 @@ export default function AppPage() {
   if (supabase && !session) return <LoginView email={authEmail} setEmail={setAuthEmail} code={authCode} setCode={setAuthCode} sendMagicLink={sendMagicLink} verifyEmailCode={verifyEmailCode} message={authMessage} />;
 
   return (
-    <main className="min-h-screen pb-24 lg:pb-0">
+    <main className="min-h-screen overflow-x-hidden pb-24 lg:pb-0">
       <aside className="fixed left-0 top-0 hidden h-screen w-64 border-r border-black/10 bg-white/70 p-5 backdrop-blur lg:block">
         <Header setShowSettings={setShowSettings} />
         <Nav tab={tab} setTab={setTab} vertical />
@@ -480,14 +480,40 @@ function TaskForm({ task, setTask, onSave }: { task: Task; setTask: (task: Task)
     </button>
     {detailsOpen && <div className="grid gap-3 rounded-md border border-black/10 bg-stone-50 p-3">
       <textarea aria-label="업무 설명 및 체크리스트" value={task.description} onChange={(event) => setTask({ ...task, description: event.target.value })} placeholder="업무 설명 및 체크리스트" className="field min-h-20" />
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><Select label="중요도" value={task.importance} values={["긴급", "높음", "보통", "낮음"]} onChange={(value) => setTask({ ...task, importance: value as Task["importance"] })} /><input type="date" aria-label="예정 날짜" value={task.scheduledDate} onChange={(event) => setTask({ ...task, scheduledDate: event.target.value })} className="field" /></div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><Select label="상태" value={task.status} values={["수집됨", "이번 주", "진행 중", "확인 대기", "완료"]} onChange={(value) => setTask({ ...task, status: value as TaskStatus })} /><input type="time" aria-label="시작 시간" value={task.scheduledStart ?? ""} onChange={(event) => setTask({ ...task, scheduledStart: event.target.value || null })} className="field" /><input type="time" aria-label="종료 시간" value={task.scheduledEnd ?? ""} onChange={(event) => setTask({ ...task, scheduledEnd: event.target.value || null })} className="field" /></div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><input type="date" aria-label="마감일" value={task.deadline ?? ""} onChange={(event) => setTask({ ...task, deadline: event.target.value || null })} className="field" /><Select label="브랜치" value={task.branch} values={["공릉", "중계", "공통"]} onChange={(value) => setTask({ ...task, branch: value as Task["branch"] })} /></div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <Select label="중요도" value={task.importance} values={["긴급", "높음", "보통", "낮음"]} onChange={(value) => setTask({ ...task, importance: value as Task["importance"] })} />
+        <LabeledInput label="업무 예정일" help="이 업무를 실행할 날짜">
+          <input type="date" aria-label="업무 예정일" value={task.scheduledDate} onChange={(event) => setTask({ ...task, scheduledDate: event.target.value })} className="field" />
+        </LabeledInput>
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(130px,1fr)_minmax(130px,1fr)]">
+        <Select label="상태" value={task.status} values={["수집됨", "이번 주", "진행 중", "확인 대기", "완료"]} onChange={(value) => setTask({ ...task, status: value as TaskStatus })} />
+        <LabeledInput label="시작 시간">
+          <input type="time" aria-label="시작 시간" value={task.scheduledStart ?? ""} onChange={(event) => setTask({ ...task, scheduledStart: event.target.value || null })} className="field time-field" />
+        </LabeledInput>
+        <LabeledInput label="종료 시간">
+          <input type="time" aria-label="종료 시간" value={task.scheduledEnd ?? ""} onChange={(event) => setTask({ ...task, scheduledEnd: event.target.value || null })} className="field time-field" />
+        </LabeledInput>
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <LabeledInput label="최종 마감일 (선택)" help="늦어도 완료해야 하는 날짜">
+          <input type="date" aria-label="최종 마감일" value={task.deadline ?? ""} onChange={(event) => setTask({ ...task, deadline: event.target.value || null })} className="field" />
+        </LabeledInput>
+        <Select label="브랜치" value={task.branch} values={["공릉", "중계", "공통"]} onChange={(value) => setTask({ ...task, branch: value as Task["branch"] })} />
+      </div>
       <textarea aria-label="성과 또는 메모" value={task.outcomeMemo} onChange={(event) => setTask({ ...task, outcomeMemo: event.target.value })} placeholder="성과 또는 메모" className="field" />
     </div>}
     <button onClick={handleSave} disabled={saving} className="focus-ring rounded-md bg-ink px-4 py-3 font-semibold text-white disabled:opacity-60">{saving ? "저장 중..." : "저장"}</button>
     {message && <p className={`rounded-md px-3 py-2 text-sm ${message.includes("저장되었습니다") ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{message}</p>}
   </div>;
+}
+
+function LabeledInput({ label, help, children }: { label: string; help?: string; children: React.ReactNode }) {
+  return <label className="grid min-w-0 gap-1 text-xs font-semibold text-stone-700">
+    <span>{label}</span>
+    {help && <span className="text-[11px] font-normal leading-relaxed text-stone-500">{help}</span>}
+    {children}
+  </label>;
 }
 
 function CategoryGuide({ category, open, setOpen }: { category: TaskCategory; open: boolean; setOpen: (value: boolean) => void }) {
