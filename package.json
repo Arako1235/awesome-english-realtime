@@ -1,0 +1,45 @@
+{
+  "name": "awesome-english-realtime",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test work/test-build/calculations.test.js"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@supabase/ssr": "0.12.4",
+    "@supabase/supabase-js": "2.112.3",
+    "date-fns": "4.1.0",
+    "date-fns-tz": "3.2.0",
+    "dexie": "4.0.11",
+    "lucide-react": "0.468.0",
+    "next": "^16.3.1",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "recharts": "2.15.3",
+    "uuid": "11.1.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "3.3.1",
+    "@testing-library/react": "16.3.0",
+    "@types/node": "24.3.0",
+    "@types/react": "19.1.10",
+    "@types/react-dom": "19.1.7",
+    "@vitejs/plugin-react": "5.0.1",
+    "autoprefixer": "10.4.21",
+    "eslint": "9.34.0",
+    "eslint-config-next": "^16.3.1",
+    "jsdom": "26.1.0",
+    "postcss": "8.5.6",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
+  }
+}
