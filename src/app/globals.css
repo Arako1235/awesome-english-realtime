@@ -33,6 +33,16 @@ button, input, textarea, select {
   @apply focus-ring w-full rounded-md border border-black/10 bg-white px-3 py-3 text-sm;
 }
 
+.time-field {
+  box-sizing: border-box;
+  min-width: 130px;
+  padding-right: 2.75rem;
+}
+
+input[type="time"].time-field::-webkit-calendar-picker-indicator {
+  margin-left: 0.25rem;
+}
+
 .icon-btn {
   @apply focus-ring inline-flex h-10 w-10 items-center justify-center rounded-md border border-black/10 bg-white text-stone-700 hover:bg-stone-50;
 }
