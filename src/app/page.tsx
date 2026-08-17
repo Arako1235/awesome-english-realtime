@@ -24,6 +24,35 @@ const tabs: { label: Tab; icon: React.ElementType }[] = [
   { label: "리포트", icon: ClipboardList }
 ];
 
+const categoryGuideIntro = "운영을 유지하는 일 = RUN · 매출과 학생을 늘리는 일 = GROW · 반복 업무를 줄이는 시스템 = BUILD · 아직 실행 전인 생각 = IDEA";
+
+const categoryGuides: Record<TaskCategory, { title: string; short: string; detail: string; examples: string[] }> = {
+  RUN: {
+    title: "RUN · 운영과 유지",
+    short: "오늘 하지 않으면 운영에 문제가 생기는 일",
+    detail: "오늘 하지 않으면 학원 운영에 문제나 지연이 생기는 일",
+    examples: ["학부모 문의·카카오톡 응대", "재원생 공지와 상담", "결석·보강·수업 일정 관리", "교사 근태·급여 관리", "캠프 준비와 현장 운영", "환불·세금·시설 문제 처리"]
+  },
+  GROW: {
+    title: "GROW · 매출과 성장",
+    short: "문의·등록·재등록·매출을 늘리기 위한 일",
+    detail: "문의·상담·등록·재등록·매출을 늘리기 위해 실행하는 일",
+    examples: ["인스타 릴스·피드 제작과 게시", "블로그·당근·카카오채널 홍보", "메타 광고 운영", "학부모 설명회 모집과 진행", "신규생·소개 이벤트", "상담 후 등록 유도", "재등록률 향상 캠페인"]
+  },
+  BUILD: {
+    title: "BUILD · 시스템화",
+    short: "앞으로 반복되는 시간과 비용을 줄이는 일",
+    detail: "한 번 만들어 다음부터 시간·비용·실수를 줄이는 일",
+    examples: ["업무관리 앱 제작과 개선", "교사 KPI·ROI 대시보드 구축", "상담 매뉴얼과 스크립트 제작", "반복 공지 템플릿 제작", "캠프 운영 체크리스트 제작", "급여·재등록률 자동 계산", "신규교사 온보딩 매뉴얼 제작"]
+  },
+  IDEA: {
+    title: "IDEA · 실행 전 아이디어",
+    short: "아직 실행하지 않고 수집·검토 중인 생각",
+    detail: "아직 실행하지 않고 수집·검토·보관하는 생각",
+    examples: ["새로운 캠프 테마", "릴스 후킹 문구 아이디어", "신규생 이벤트 구상", "설명회 주제", "새로운 학생 리워드 제도", "신규 프로그램 아이디어"]
+  }
+};
+
 const emptyTask = (date = todaySeoul()): Task => ({
   id: uuid(),
   userId: "local-user",
@@ -424,6 +453,7 @@ function TaskRow({ task, data, patchTask, softDeleteTask, startTimer, pauseTimer
 
 function TaskForm({ task, setTask, onSave }: { task: Task; setTask: (task: Task) => void; onSave: () => Promise<boolean> }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   async function handleSave() {
@@ -443,6 +473,7 @@ function TaskForm({ task, setTask, onSave }: { task: Task; setTask: (task: Task)
       <Select label="분류" value={task.category} values={taskCategories} onChange={(value) => setTask({ ...task, category: value as TaskCategory })} />
       <input type="number" min={1} aria-label="예상시간(분)" value={task.estimatedMinutes} onChange={(event) => setTask({ ...task, estimatedMinutes: Number(event.target.value) || 30 })} placeholder="예상시간(분)" className="field" />
     </div>
+    <CategoryGuide category={task.category} open={guideOpen} setOpen={setGuideOpen} />
     <button type="button" onClick={() => setDetailsOpen((open) => !open)} className="focus-ring flex items-center justify-between rounded-md border border-black/10 bg-white px-3 py-3 text-sm font-semibold text-stone-700">
       상세 설정
       <ChevronDown className={`h-4 w-4 transition-transform ${detailsOpen ? "rotate-180" : ""}`} aria-hidden />
@@ -456,6 +487,43 @@ function TaskForm({ task, setTask, onSave }: { task: Task; setTask: (task: Task)
     </div>}
     <button onClick={handleSave} disabled={saving} className="focus-ring rounded-md bg-ink px-4 py-3 font-semibold text-white disabled:opacity-60">{saving ? "저장 중..." : "저장"}</button>
     {message && <p className={`rounded-md px-3 py-2 text-sm ${message.includes("저장되었습니다") ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{message}</p>}
+  </div>;
+}
+
+function CategoryGuide({ category, open, setOpen }: { category: TaskCategory; open: boolean; setOpen: (value: boolean) => void }) {
+  const selected = categoryGuides[category];
+  return <div className="grid gap-2 rounded-md bg-stone-50 px-3 py-2 text-sm text-stone-600">
+    <p className="leading-relaxed">{categoryGuideIntro}</p>
+    <p className="rounded-md bg-white/80 px-3 py-2 text-xs font-semibold text-stone-700">{category}: {selected.short}</p>
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={() => setOpen(!open)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          setOpen(!open);
+        }
+      }}
+      className="focus-ring flex w-fit items-center gap-1 rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold text-stone-700"
+    >
+      분류가 헷갈리나요? 예시 보기
+      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+    </button>
+    {open && <div className="grid gap-2 rounded-md border border-black/10 bg-white p-3 md:grid-cols-2">
+      {taskCategories.map((item) => {
+        const guide = categoryGuides[item];
+        return <section key={item} className={`rounded-md border p-3 ${item === category ? "border-black/20 bg-stone-50" : "border-black/10 bg-white"}`}>
+          <h4 className="text-sm font-bold text-stone-800">{guide.title}</h4>
+          <p className="mt-1 text-xs leading-relaxed text-stone-600">{guide.detail}</p>
+          <p className="mt-3 text-xs font-semibold text-stone-700">예시</p>
+          <ul className="mt-1 list-disc space-y-1 pl-4 text-xs leading-relaxed text-stone-600">
+            {guide.examples.map((example) => <li key={example}>{example}</li>)}
+          </ul>
+        </section>;
+      })}
+      <p className="rounded-md bg-amber-50 p-3 text-xs font-semibold leading-relaxed text-amber-900 md:col-span-2">아이디어를 실제로 실행하기 시작하면 IDEA가 아닙니다. 매출 목적이면 GROW, 시스템화 목적이면 BUILD로 변경하세요.</p>
+    </div>}
   </div>;
 }
 
