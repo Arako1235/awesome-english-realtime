@@ -1,0 +1,24 @@
+{
+  "name": "Ara 업무관리",
+  "short_name": "Ara 업무",
+  "description": "Awesome English 업무 시간과 경영 기여 관리",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fbf4e8",
+  "theme_color": "#2d2a26",
+  "icons": [
+    {
+      "src": "/icons/ara-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/ara-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
