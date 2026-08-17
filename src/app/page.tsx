@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { v4 as uuid } from "uuid";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { CalendarDays, ClipboardList, Gauge, Home, Lightbulb, Loader2, Pause, Play, Plus, RefreshCw, Settings, Square, TimerReset, Trash2 } from "lucide-react";
+import { CalendarDays, ChevronDown, ClipboardList, Gauge, Home, Lightbulb, Loader2, Pause, Play, Plus, RefreshCw, Settings, Square, TimerReset, Trash2 } from "lucide-react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import type { AppData, Idea, IdeaStatus, RecurringTaskRule, Task, TaskCategory, TaskStatus, WeeklyMetric } from "@/lib/types";
 import { defaultSettings, emptyData, sampleData } from "@/lib/seed";
 import { clearSamples, loadSamples, readLocalData, writeLocalData } from "@/lib/local-db";
 import { createSupabaseBrowserClient, hasSupabaseEnv } from "@/lib/supabase";
 import { addWorkspaceMember, clearRemoteData, readRemoteData, subscribeToUserData, writeRemoteData } from "@/lib/supabase-db";
-import { actualMinutes, categoryMeta, generateDueRecurringTasks, getWeeklyMetric, makeReportDraft, runningSession, weeklySummary } from "@/lib/calculations";
+import { actualMinutes, categoryMeta, generateDueRecurringTasks, getWeeklyMetric, makeReportDraft, runningSession, taskCategories, weeklySummary } from "@/lib/calculations";
 import { minutesBetweenClock, nowIso, todaySeoul, weekStartSeoul } from "@/lib/time";
 
 type Tab = "오늘" | "이번 주" | "반복업무" | "아이디어" | "대시보드" | "리포트";
@@ -64,6 +64,7 @@ export default function AppPage() {
   const [supabase] = useState<SupabaseClient | null>(() => hasSupabaseEnv() ? createSupabaseBrowserClient() : null);
   const [session, setSession] = useState<Session | null>(null);
   const [authEmail, setAuthEmail] = useState("");
+  const [authCode, setAuthCode] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [syncError, setSyncError] = useState("");
 
@@ -124,8 +125,10 @@ export default function AppPage() {
       setSyncError("");
       if (supabase && session?.user.id) await writeRemoteData(supabase, generated);
       else await writeLocalData(generated);
+      return true;
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : "저장 중 오류가 발생했습니다.");
+      return false;
     }
   }
 
@@ -137,12 +140,15 @@ export default function AppPage() {
   const metric = getWeeklyMetric(data, weekStart);
 
   async function saveTask(task: Task) {
-    if (!task.title.trim()) return;
+    if (!task.title.trim()) return false;
     const normalized = { ...task, userId: session?.user.id ?? task.userId, workspaceId: data.settings.activeWorkspaceId, estimatedMinutes: task.estimatedMinutes || minutesBetweenClock(task.scheduledStart, task.scheduledEnd) || 30, updatedAt: nowIso() };
     const exists = data.tasks.some((item) => item.id === normalized.id);
-    await persist({ ...data, tasks: exists ? data.tasks.map((item) => item.id === normalized.id ? normalized : item) : [...data.tasks, normalized] });
-    setTaskDraft(emptyTask(today));
-    setEditingId(null);
+    const saved = await persist({ ...data, tasks: exists ? data.tasks.map((item) => item.id === normalized.id ? normalized : item) : [...data.tasks, normalized] });
+    if (saved) {
+      setTaskDraft(emptyTask(today));
+      setEditingId(null);
+    }
+    return saved;
   }
 
   async function patchTask(id: string, patch: Partial<Task>) {
@@ -214,7 +220,7 @@ export default function AppPage() {
 
   async function updateMetric(patch: Partial<WeeklyMetric>) {
     const next = { ...metric, ...patch };
-    await persist({ ...data, weeklyMetrics: data.weeklyMetrics.some((item) => item.weekStart === weekStart) ? data.weeklyMetrics.map((item) => item.weekStart === weekStart ? next : item) : [...data.weeklyMetrics, next] });
+    return persist({ ...data, weeklyMetrics: data.weeklyMetrics.some((item) => item.weekStart === weekStart) ? data.weeklyMetrics.map((item) => item.weekStart === weekStart ? next : item) : [...data.weeklyMetrics, next] });
   }
 
   async function saveReport(draft: string) {
@@ -229,7 +235,23 @@ export default function AppPage() {
       email: authEmail.trim(),
       options: { emailRedirectTo: window.location.origin }
     });
-    setAuthMessage(error ? error.message : "로그인 링크를 이메일로 보냈습니다. 같은 계정으로 집 웹과 PC에서 접속하면 데이터가 실시간 동기화됩니다.");
+    setAuthMessage(error ? error.message : "로그인 메일을 보냈습니다. 링크가 다른 브라우저에서 열리면 메일의 6자리 코드를 아래에 입력하세요.");
+  }
+
+  async function verifyEmailCode() {
+    if (!supabase || !authEmail.trim() || !authCode.trim()) return;
+    const { data: verified, error } = await supabase.auth.verifyOtp({
+      email: authEmail.trim(),
+      token: authCode.trim(),
+      type: "email"
+    });
+    if (error) {
+      setAuthMessage(error.message);
+      return;
+    }
+    setSession(verified.session);
+    setAuthCode("");
+    setAuthMessage("로그인되었습니다.");
   }
 
   async function signOut() {
@@ -266,7 +288,7 @@ export default function AppPage() {
   }
 
   if (loading) return <main className="grid min-h-screen place-items-center"><Loader2 className="animate-spin" aria-label="로딩 중" /></main>;
-  if (supabase && !session) return <LoginView email={authEmail} setEmail={setAuthEmail} sendMagicLink={sendMagicLink} message={authMessage} />;
+  if (supabase && !session) return <LoginView email={authEmail} setEmail={setAuthEmail} code={authCode} setCode={setAuthCode} sendMagicLink={sendMagicLink} verifyEmailCode={verifyEmailCode} message={authMessage} />;
 
   return (
     <main className="min-h-screen pb-24 lg:pb-0">
@@ -319,7 +341,7 @@ function ownedSampleData(userId: string, workspaceId: string, currentSettings: A
   };
 }
 
-function LoginView({ email, setEmail, sendMagicLink, message }: { email: string; setEmail: (value: string) => void; sendMagicLink: () => void; message: string }) {
+function LoginView({ email, setEmail, code, setCode, sendMagicLink, verifyEmailCode, message }: { email: string; setEmail: (value: string) => void; code: string; setCode: (value: string) => void; sendMagicLink: () => void; verifyEmailCode: () => void; message: string }) {
   return <main className="grid min-h-screen place-items-center px-4">
     <section className="w-full max-w-md rounded-lg border border-black/10 bg-white/80 p-6 shadow-soft">
       <h1 className="text-2xl font-bold">Awesome English</h1>
@@ -327,6 +349,10 @@ function LoginView({ email, setEmail, sendMagicLink, message }: { email: string;
       <div className="mt-6 grid gap-3">
         <input type="email" aria-label="로그인 이메일" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" className="field" />
         <button onClick={sendMagicLink} className="focus-ring rounded-md bg-ink px-4 py-3 font-semibold text-white">로그인 링크 받기</button>
+        <div className="grid gap-2 border-t border-black/10 pt-3">
+          <input inputMode="numeric" aria-label="이메일 로그인 코드" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6자리 코드" className="field text-center text-lg font-semibold tracking-[0.3em]" />
+          <button onClick={verifyEmailCode} className="focus-ring rounded-md border border-black/10 bg-white px-4 py-3 font-semibold">코드로 로그인</button>
+        </div>
       </div>
       {message && <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">{message}</p>}
     </section>
@@ -342,7 +368,7 @@ function Nav({ tab, setTab, vertical = false }: { tab: Tab; setTab: (tab: Tab) =
 }
 
 function TodayView(props: {
-  today: string; data: AppData; taskDraft: Task; setTaskDraft: (task: Task) => void; saveTask: (task: Task) => void; patchTask: (id: string, patch: Partial<Task>) => void; softDeleteTask: (id: string) => void; startTimer: (taskId: string) => void; pauseTimer: () => void; stopTask: (task: Task) => void; currentTask: Task | null; current: unknown; quickIdea: string; setQuickIdea: (value: string) => void; quickSaveIdea: () => void; editingId: string | null; setEditingId: (id: string | null) => void;
+  today: string; data: AppData; taskDraft: Task; setTaskDraft: (task: Task) => void; saveTask: (task: Task) => Promise<boolean>; patchTask: (id: string, patch: Partial<Task>) => void; softDeleteTask: (id: string) => void; startTimer: (taskId: string) => void; pauseTimer: () => void; stopTask: (task: Task) => void; currentTask: Task | null; current: unknown; quickIdea: string; setQuickIdea: (value: string) => void; quickSaveIdea: () => void; editingId: string | null; setEditingId: (id: string | null) => void;
 }) {
   const tasks = props.data.tasks.filter((task) => !task.deletedAt && task.scheduledDate === props.today);
   const planned = tasks.reduce((sum, task) => sum + task.estimatedMinutes, 0);
@@ -396,17 +422,40 @@ function TaskRow({ task, data, patchTask, softDeleteTask, startTimer, pauseTimer
   </div>;
 }
 
-function TaskForm({ task, setTask, onSave }: { task: Task; setTask: (task: Task) => void; onSave: () => void }) {
+function TaskForm({ task, setTask, onSave }: { task: Task; setTask: (task: Task) => void; onSave: () => Promise<boolean> }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  async function handleSave() {
+    if (!task.title.trim()) {
+      setMessage("업무명을 입력해주세요.");
+      return;
+    }
+    setSaving(true);
+    const saved = await onSave();
+    setSaving(false);
+    setMessage(saved ? "업무가 저장되었습니다." : "저장하지 못했습니다. 다시 시도해주세요.");
+    if (saved) setDetailsOpen(false);
+  }
   return <div className="grid gap-3">
     <input aria-label="업무명" value={task.title} onChange={(event) => setTask({ ...task, title: event.target.value })} placeholder="업무명" className="field" />
-    <textarea aria-label="업무 설명" value={task.description} onChange={(event) => setTask({ ...task, description: event.target.value })} placeholder="업무 설명 및 체크리스트" className="field min-h-20" />
-    <div className="grid grid-cols-2 gap-2"><Select label="분류" value={task.category} values={["RUN", "GROW", "BUILD", "IDEA"]} onChange={(value) => setTask({ ...task, category: value as TaskCategory })} /><Select label="중요도" value={task.importance} values={["긴급", "높음", "보통", "낮음"]} onChange={(value) => setTask({ ...task, importance: value as Task["importance"] })} /></div>
-    <p className="rounded-md bg-stone-100 p-2 text-xs text-stone-600">긴급: 오늘 안 하면 손실이나 문제가 생기는 일 · 높음: 이번 주 매출 또는 중요한 마감과 직접 연결되는 일</p>
-    <div className="grid grid-cols-2 gap-2"><input type="date" aria-label="예정 날짜" value={task.scheduledDate} onChange={(event) => setTask({ ...task, scheduledDate: event.target.value })} className="field" /><Select label="상태" value={task.status} values={["수집됨", "이번 주", "진행 중", "확인 대기", "완료"]} onChange={(value) => setTask({ ...task, status: value as TaskStatus })} /></div>
-    <div className="grid grid-cols-3 gap-2"><input type="time" aria-label="시작" value={task.scheduledStart ?? ""} onChange={(event) => setTask({ ...task, scheduledStart: event.target.value })} className="field" /><input type="time" aria-label="종료" value={task.scheduledEnd ?? ""} onChange={(event) => setTask({ ...task, scheduledEnd: event.target.value })} className="field" /><input type="number" aria-label="예상 분" value={task.estimatedMinutes} onChange={(event) => setTask({ ...task, estimatedMinutes: Number(event.target.value) })} className="field" /></div>
-    <div className="grid grid-cols-2 gap-2"><input type="date" aria-label="마감일" value={task.deadline ?? ""} onChange={(event) => setTask({ ...task, deadline: event.target.value || null })} className="field" /><Select label="브랜치" value={task.branch} values={["공릉", "중계", "공통"]} onChange={(value) => setTask({ ...task, branch: value as Task["branch"] })} /></div>
-    <textarea aria-label="성과 또는 메모" value={task.outcomeMemo} onChange={(event) => setTask({ ...task, outcomeMemo: event.target.value })} placeholder="성과 또는 메모" className="field" />
-    <button onClick={onSave} className="focus-ring rounded-md bg-ink px-4 py-3 font-semibold text-white">저장</button>
+    <div className="grid gap-2 sm:grid-cols-[1fr_150px]">
+      <Select label="분류" value={task.category} values={taskCategories} onChange={(value) => setTask({ ...task, category: value as TaskCategory })} />
+      <input type="number" min={1} aria-label="예상시간(분)" value={task.estimatedMinutes} onChange={(event) => setTask({ ...task, estimatedMinutes: Number(event.target.value) || 30 })} placeholder="예상시간(분)" className="field" />
+    </div>
+    <button type="button" onClick={() => setDetailsOpen((open) => !open)} className="focus-ring flex items-center justify-between rounded-md border border-black/10 bg-white px-3 py-3 text-sm font-semibold text-stone-700">
+      상세 설정
+      <ChevronDown className={`h-4 w-4 transition-transform ${detailsOpen ? "rotate-180" : ""}`} aria-hidden />
+    </button>
+    {detailsOpen && <div className="grid gap-3 rounded-md border border-black/10 bg-stone-50 p-3">
+      <textarea aria-label="업무 설명 및 체크리스트" value={task.description} onChange={(event) => setTask({ ...task, description: event.target.value })} placeholder="업무 설명 및 체크리스트" className="field min-h-20" />
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><Select label="중요도" value={task.importance} values={["긴급", "높음", "보통", "낮음"]} onChange={(value) => setTask({ ...task, importance: value as Task["importance"] })} /><input type="date" aria-label="예정 날짜" value={task.scheduledDate} onChange={(event) => setTask({ ...task, scheduledDate: event.target.value })} className="field" /></div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><Select label="상태" value={task.status} values={["수집됨", "이번 주", "진행 중", "확인 대기", "완료"]} onChange={(value) => setTask({ ...task, status: value as TaskStatus })} /><input type="time" aria-label="시작 시간" value={task.scheduledStart ?? ""} onChange={(event) => setTask({ ...task, scheduledStart: event.target.value || null })} className="field" /><input type="time" aria-label="종료 시간" value={task.scheduledEnd ?? ""} onChange={(event) => setTask({ ...task, scheduledEnd: event.target.value || null })} className="field" /></div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><input type="date" aria-label="마감일" value={task.deadline ?? ""} onChange={(event) => setTask({ ...task, deadline: event.target.value || null })} className="field" /><Select label="브랜치" value={task.branch} values={["공릉", "중계", "공통"]} onChange={(value) => setTask({ ...task, branch: value as Task["branch"] })} /></div>
+      <textarea aria-label="성과 또는 메모" value={task.outcomeMemo} onChange={(event) => setTask({ ...task, outcomeMemo: event.target.value })} placeholder="성과 또는 메모" className="field" />
+    </div>}
+    <button onClick={handleSave} disabled={saving} className="focus-ring rounded-md bg-ink px-4 py-3 font-semibold text-white disabled:opacity-60">{saving ? "저장 중..." : "저장"}</button>
+    {message && <p className={`rounded-md px-3 py-2 text-sm ${message.includes("저장되었습니다") ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{message}</p>}
   </div>;
 }
 
@@ -414,7 +463,7 @@ function WeekView({ data, week }: { data: AppData; week: ReturnType<typeof weekl
   return <div className="grid gap-5"><Title title="이번 주" subtitle="계획시간, 실제시간, 분류별 균형을 확인합니다" />{week.warnings.map((warning) => <div key={warning} className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">{warning}</div>)}<div className="grid gap-3 md:grid-cols-4">{Object.entries(categoryMeta).map(([cat, meta]) => <Stat key={cat} label={`${cat} ${meta.label}`} value={`${week.totals[cat as TaskCategory].actual}/${week.targetMap[cat as TaskCategory]}분`} />)}</div><Panel title="예상보다 오래 걸린 업무">{week.overEstimate.length ? week.overEstimate.map(({ task, diff }) => <p key={task.id} className="border-b border-black/10 py-2">{task.title} · {diff}분 초과</p>) : <Empty text="큰 초과 업무가 없습니다." />}</Panel><Panel title="업무 목록">{week.tasks.map((task) => <p key={task.id} className="border-b border-black/10 py-2">{task.scheduledDate} · {task.category} · {task.title} · {task.status} · 실제 {actualMinutes(task, data.sessions)}분</p>)}</Panel></div>;
 }
 
-function RecurringView({ data, persist }: { data: AppData; persist: (data: AppData) => Promise<void> }) {
+function RecurringView({ data, persist }: { data: AppData; persist: (data: AppData) => Promise<boolean> }) {
   async function addRule() {
     const rule: RecurringTaskRule = { id: uuid(), userId: data.settings.userId, title: "새 반복업무", description: "", category: "RUN", importance: "보통", branch: "공통", frequency: "weekly", interval: 1, startDate: todaySeoul(), externalDeadlineOffsetDays: 0, internalDeadlineOffsetDays: -2, checklist: ["필요 자료 확인"], contactMemo: "", nextOccurrenceDate: todaySeoul(), isActive: true, pausedAt: null, createdAt: nowIso(), updatedAt: nowIso() };
     await persist({ ...data, recurringRules: [...data.recurringRules, rule] });
@@ -422,16 +471,41 @@ function RecurringView({ data, persist }: { data: AppData; persist: (data: AppDa
   return <div className="grid gap-5"><Title title="반복업무" subtitle="앱 실행 시 누락된 반복업무를 자동 생성하고 중복을 막습니다" /><button onClick={addRule} className="focus-ring w-fit rounded-md bg-ink px-4 py-3 font-semibold text-white">반복업무 추가</button><div className="grid gap-3">{data.recurringRules.map((rule) => <Panel key={rule.id} title={rule.title}><div className="grid gap-2 md:grid-cols-4"><input className="field" value={rule.title} onChange={(e) => persist({ ...data, recurringRules: data.recurringRules.map((r) => r.id === rule.id ? { ...r, title: e.target.value } : r) })} /><Select label="주기" value={rule.frequency} values={["weekly", "monthly", "quarterly", "halfyearly", "yearly"]} onChange={(value) => persist({ ...data, recurringRules: data.recurringRules.map((r) => r.id === rule.id ? { ...r, frequency: value as RecurringTaskRule["frequency"] } : r) })} /><input type="date" className="field" value={rule.nextOccurrenceDate} onChange={(e) => persist({ ...data, recurringRules: data.recurringRules.map((r) => r.id === rule.id ? { ...r, nextOccurrenceDate: e.target.value } : r) })} /><button className="field" onClick={() => persist({ ...data, recurringRules: data.recurringRules.map((r) => r.id === rule.id ? { ...r, isActive: !r.isActive, pausedAt: r.isActive ? nowIso() : null } : r) })}>{rule.isActive ? "활성" : "일시정지"}</button></div><p className="mt-2 text-sm text-stone-600">체크리스트: {rule.checklist.join(", ")} · 담당/기관 메모: {rule.contactMemo || "없음"}</p></Panel>)}</div></div>;
 }
 
-function IdeasView({ data, persist, convertIdea }: { data: AppData; persist: (data: AppData) => Promise<void>; convertIdea: (idea: Idea) => Promise<void> }) {
+function IdeasView({ data, persist, convertIdea }: { data: AppData; persist: (data: AppData) => Promise<boolean>; convertIdea: (idea: Idea) => Promise<void> }) {
   const statuses: IdeaStatus[] = ["수집함", "검토 예정", "다음에 실행", "이번 달 실행", "진행 중", "결과 확인", "보관 또는 폐기"];
   const activeCount = data.ideas.filter((idea) => idea.status === "이번 달 실행" || idea.status === "진행 중").length;
   return <div className="grid gap-5"><Title title="아이디어" subtitle="보관은 넓게, 실행은 한 번에 하나만" />{activeCount > 1 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">이번 달 실행/진행 중 아이디어가 {activeCount}개입니다. 핵심 아이디어는 1개만 적극 실행하는 것을 권장합니다.</div>}<div className="grid gap-3 xl:grid-cols-7">{statuses.map((status) => <div key={status} className="min-h-44 rounded-lg border border-black/10 bg-white/70 p-3"><h3 className="mb-3 text-sm font-bold">{status}</h3>{data.ideas.filter((idea) => !idea.deletedAt && idea.status === status).map((idea) => <div key={idea.id} className="mb-2 rounded-md bg-white p-3 shadow-soft"><input value={idea.title} onChange={(e) => persist({ ...data, ideas: data.ideas.map((item) => item.id === idea.id ? { ...item, title: e.target.value } : item) })} className="w-full font-semibold outline-none" /><textarea value={idea.detail} onChange={(e) => persist({ ...data, ideas: data.ideas.map((item) => item.id === idea.id ? { ...item, detail: e.target.value } : item) })} placeholder="상세내용" className="mt-2 w-full rounded border border-black/10 p-2 text-sm" /><div className="mt-2 grid grid-cols-2 gap-1"><select value={idea.status} onChange={(e) => persist({ ...data, ideas: data.ideas.map((item) => item.id === idea.id ? { ...item, status: e.target.value as IdeaStatus } : item) })} className="field text-xs">{statuses.map((s) => <option key={s}>{s}</option>)}</select><button onClick={() => convertIdea(idea)} className="rounded-md bg-grow px-2 py-2 text-xs font-semibold text-white">업무 전환</button></div></div>)}</div>)}</div></div>;
 }
 
-function DashboardView({ week, metric, updateMetric }: { week: ReturnType<typeof weeklySummary>; metric: WeeklyMetric; updateMetric: (patch: Partial<WeeklyMetric>) => Promise<void> }) {
+function DashboardView({ week, metric, updateMetric }: { week: ReturnType<typeof weeklySummary>; metric: WeeklyMetric; updateMetric: (patch: Partial<WeeklyMetric>) => Promise<boolean> }) {
+  const [metricPatch, setMetricPatch] = useState<Partial<WeeklyMetric>>({});
+  const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
+  const saveTimer = useRef<number | null>(null);
+  const patchRef = useRef<Partial<WeeklyMetric>>({});
+  const draftMetric = { ...metric, ...metricPatch };
   const barData = Object.entries(categoryMeta).map(([cat, meta]) => ({ name: cat, 목표: week.targetMap[cat as TaskCategory], 실제: week.totals[cat as TaskCategory].actual, fill: meta.color }));
   const daily = ["월", "화", "수", "목", "금", "토", "일"].map((day, i) => ({ day, minutes: week.tasks.filter((task) => new Date(task.scheduledDate).getDay() === (i + 1) % 7).reduce((sum, task) => sum + task.estimatedMinutes, 0) }));
-  return <div className="grid gap-5"><Title title="대시보드" subtitle="이번 주 경영 숫자와 시간 사용을 함께 봅니다" /><div className="grid gap-3 md:grid-cols-4"><Stat label="총 실제 업무시간" value={`${week.actual}분`} /><Stat label="완료 업무" value={`${week.completedCount}개`} /><Stat label="반복업무 완료율" value={`${week.recurringDue ? Math.round(week.recurringDone / week.recurringDue * 100) : 0}%`} /><Stat label="절약한 예상시간" value={`${metric.savedMinutes}분`} /></div><Panel title="성과 숫자 입력"><div className="grid gap-2 md:grid-cols-4">{(["inquiries","consultations","eventApplications","newEnrollments","marketingCost","revenue","expectedRevenue","savedMinutes"] as const).map((key) => <label key={key} className="text-sm">{labelMetric(key)}<input type="number" value={metric[key]} onChange={(e) => updateMetric({ [key]: Number(e.target.value) })} className="field mt-1" /></label>)}</div><textarea value={metric.notes} onChange={(e) => updateMetric({ notes: e.target.value })} placeholder="숫자·비용 관련 발견사항" className="field mt-3" /></Panel><section className="grid gap-5 xl:grid-cols-2"><Panel title="분류별 목표/실제"><ChartBox><ResponsiveContainer><BarChart data={barData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis /><Tooltip /><Legend /><Bar dataKey="목표" fill="#d6cfc4" /><Bar dataKey="실제">{barData.map((item) => <Cell key={item.name} fill={item.fill} />)}</Bar></BarChart></ResponsiveContainer></ChartBox></Panel><Panel title="일별 업무시간"><ChartBox><ResponsiveContainer><LineChart data={daily}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis /><Tooltip /><Line dataKey="minutes" stroke="#3d9b72" strokeWidth={3} /></LineChart></ResponsiveContainer></ChartBox></Panel></section></div>;
+  useEffect(() => () => {
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+  }, []);
+  function scheduleMetricSave(patch: Partial<WeeklyMetric>) {
+    const nextPatch = { ...patchRef.current, ...patch };
+    const nextMetric = { ...metric, ...nextPatch };
+    patchRef.current = nextPatch;
+    setMetricPatch(nextPatch);
+    setSaveState("saving");
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(async () => {
+      const saved = await updateMetric(nextMetric);
+      if (saved) {
+        patchRef.current = {};
+        setMetricPatch({});
+      }
+      setSaveState(saved ? "saved" : "error");
+    }, 700);
+  }
+  const statusText = saveState === "saving" ? "저장 중..." : saveState === "error" ? "저장하지 못했습니다. 다시 시도해주세요." : "자동 저장됨";
+  return <div className="grid gap-5"><Title title="대시보드" subtitle="이번 주 경영 숫자와 시간 사용을 함께 봅니다" /><div className="grid gap-3 md:grid-cols-4"><Stat label="총 실제 업무시간" value={`${week.actual}분`} /><Stat label="완료 업무" value={`${week.completedCount}개`} /><Stat label="반복업무 완료율" value={`${week.recurringDue ? Math.round(week.recurringDone / week.recurringDue * 100) : 0}%`} /><Stat label="절약한 예상시간" value={`${draftMetric.savedMinutes}분`} /></div><Panel title="성과 숫자 입력"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><span className="text-sm text-stone-600">이번 주 성과 숫자</span><span className={`rounded px-2 py-1 text-xs font-semibold ${saveState === "error" ? "bg-rose-50 text-rose-700" : "bg-stone-100 text-stone-600"}`}>{statusText}</span></div><div className="grid gap-2 md:grid-cols-4">{(["inquiries","consultations","eventApplications","newEnrollments","marketingCost","revenue","expectedRevenue","savedMinutes"] as const).map((key) => <label key={key} className="text-sm">{labelMetric(key)}<input type="number" value={draftMetric[key]} onChange={(e) => scheduleMetricSave({ [key]: Number(e.target.value) })} className="field mt-1" /></label>)}</div><textarea value={draftMetric.notes} onChange={(e) => scheduleMetricSave({ notes: e.target.value })} placeholder="숫자·비용 관련 발견사항" className="field mt-3" /></Panel><section className="grid gap-5 xl:grid-cols-2"><Panel title="분류별 목표/실제"><ChartBox><ResponsiveContainer><BarChart data={barData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis /><Tooltip /><Legend /><Bar dataKey="목표" fill="#d6cfc4" /><Bar dataKey="실제">{barData.map((item) => <Cell key={item.name} fill={item.fill} />)}</Bar></BarChart></ResponsiveContainer></ChartBox></Panel><Panel title="일별 업무시간"><ChartBox><ResponsiveContainer><LineChart data={daily}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis /><Tooltip /><Line dataKey="minutes" stroke="#3d9b72" strokeWidth={3} /></LineChart></ResponsiveContainer></ChartBox></Panel></section></div>;
 }
 
 function ReportView({ data, weekStart, saveReport }: { data: AppData; weekStart: string; saveReport: (draft: string) => Promise<void> }) {
@@ -440,7 +514,7 @@ function ReportView({ data, weekStart, saveReport }: { data: AppData; weekStart:
   return <div className="grid gap-5"><Title title="리포트" subtitle="금요일 회고용 경영 기여 리포트 초안" /><div className="flex gap-2"><button onClick={() => { const next = makeReportDraft(data, weekStart); setDraft(next); }} className="focus-ring rounded-md bg-ink px-4 py-3 font-semibold text-white">초안 다시 생성</button><button onClick={() => saveReport(draft)} className="focus-ring rounded-md bg-grow px-4 py-3 font-semibold text-white">저장</button><button onClick={() => navigator.clipboard.writeText(draft)} className="focus-ring rounded-md border border-black/10 bg-white px-4 py-3">복사</button><button onClick={() => window.print()} className="focus-ring rounded-md border border-black/10 bg-white px-4 py-3">인쇄</button></div><textarea aria-label="경영 기여 리포트" value={draft} onChange={(e) => setDraft(e.target.value)} className="min-h-[560px] w-full rounded-lg border border-black/10 bg-white p-4 font-mono text-sm shadow-soft" /></div>;
 }
 
-function SettingsDialog({ data, persist, close, signOut, inviteAction, loadSamplesAction, clearSamplesAction }: { data: AppData; persist: (data: AppData) => Promise<void>; close: () => void; signOut?: () => Promise<void>; inviteAction?: (email: string) => Promise<void>; loadSamplesAction: () => Promise<void>; clearSamplesAction: () => Promise<void> }) {
+function SettingsDialog({ data, persist, close, signOut, inviteAction, loadSamplesAction, clearSamplesAction }: { data: AppData; persist: (data: AppData) => Promise<boolean>; close: () => void; signOut?: () => Promise<void>; inviteAction?: (email: string) => Promise<void>; loadSamplesAction: () => Promise<void>; clearSamplesAction: () => Promise<void> }) {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
   return <div className="fixed inset-0 z-30 grid place-items-center bg-black/30 p-4"><div className="w-full max-w-xl rounded-lg bg-cream p-5 shadow-soft"><Title title="설정" subtitle="주간 목표시간과 공유 멤버를 관리합니다" />
