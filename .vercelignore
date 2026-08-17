@@ -1,0 +1,9 @@
+.next
+node_modules
+work
+outputs
+tsconfig.tsbuildinfo
+AGENTS.md
+CLAUDE.md
+.env.local
+npm-cache
