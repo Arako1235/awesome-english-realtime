@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  background: #fbf4e8;
+  color: #2d2a26;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.7), rgba(251,244,232,0.9)),
+    #fbf4e8;
+  font-family: var(--font-geist-sans), "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+}
+
+button, input, textarea, select {
+  font: inherit;
+}
+
+.focus-ring {
+  @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2;
+}
+
+.field {
+  @apply focus-ring w-full rounded-md border border-black/10 bg-white px-3 py-3 text-sm;
+}
+
+.icon-btn {
+  @apply focus-ring inline-flex h-10 w-10 items-center justify-center rounded-md border border-black/10 bg-white text-stone-700 hover:bg-stone-50;
+}
+
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
