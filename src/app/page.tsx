@@ -85,6 +85,28 @@ function clockLabel(value: string | null) {
   return value?.slice(0, 5) || "--:--";
 }
 
+function clockMinutes(value: string | null) {
+  if (!value) return null;
+  const [hour, minute] = clockLabel(value).split(":").map(Number);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return hour * 60 + minute;
+}
+
+function seoulClockMinutes(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(now);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
+}
+
+function isPlannedTimePassed(task: Task, today: string, now = new Date()) {
+  if (task.status === "완료") return false;
+  if (task.scheduledDate < today) return true;
+  if (task.scheduledDate > today) return false;
+  const plannedEnd = clockMinutes(task.scheduledEnd) ?? (clockMinutes(task.scheduledStart) ?? 0) + task.estimatedMinutes;
+  return plannedEnd > 0 && seoulClockMinutes(now) > plannedEnd;
+}
+
 function normalizeClockDraft(value: string | null) {
   if (!value?.trim()) return null;
   const trimmed = value.trim();
@@ -450,14 +472,16 @@ function TodayView(props: {
   </div>;
 }
 
-function TaskRow({ task, data, patchTask, softDeleteTask, startTimer, pauseTimer, stopTask, currentTask, setTaskDraft, setEditingId }: { task: Task; data: AppData; patchTask: (id: string, patch: Partial<Task>) => void; softDeleteTask: (id: string) => void; startTimer: (taskId: string) => void; pauseTimer: () => void; stopTask: (task: Task) => void; currentTask: Task | null; setTaskDraft: (task: Task) => void; setEditingId: (id: string | null) => void }) {
+function TaskRow({ task, today, data, patchTask, softDeleteTask, startTimer, pauseTimer, stopTask, currentTask, setTaskDraft, setEditingId }: { task: Task; today: string; data: AppData; patchTask: (id: string, patch: Partial<Task>) => void; softDeleteTask: (id: string) => void; startTimer: (taskId: string) => void; pauseTimer: () => void; stopTask: (task: Task) => void; currentTask: Task | null; setTaskDraft: (task: Task) => void; setEditingId: (id: string | null) => void }) {
   const meta = categoryMeta[task.category];
   const actual = actualMinutes(task, data.sessions);
   const overMinutes = Math.max(0, actual - task.estimatedMinutes);
   const isComplete = task.status === "완료";
-  return <div draggable onDragEnd={(event) => { const h = Math.max(13, Math.min(18, 13 + Math.round(event.clientY / 160))); patchTask(task.id, { scheduledStart: `${String(h).padStart(2, "0")}:00`, scheduledEnd: `${String(h + 1).padStart(2, "0")}:00` }); }} className={`rounded-lg border p-3 shadow-soft ${isComplete ? "border-emerald-200 bg-emerald-50/90" : "border-black/10 bg-white"}`}>
+  const isPastPlannedTime = isPlannedTimePassed(task, today);
+  const cardTone = isComplete ? "border-emerald-200 bg-emerald-50/90" : isPastPlannedTime ? "border-rose-200 bg-rose-50/90" : "border-black/10 bg-white";
+  return <div draggable onDragEnd={(event) => { const h = Math.max(13, Math.min(18, 13 + Math.round(event.clientY / 160))); patchTask(task.id, { scheduledStart: `${String(h).padStart(2, "0")}:00`, scheduledEnd: `${String(h + 1).padStart(2, "0")}:00` }); }} className={`rounded-lg border p-3 shadow-soft ${cardTone}`}>
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded px-2 py-1 text-xs font-bold text-white" style={{ background: meta.color }}>{task.category}</span><strong className="min-w-0 break-words">{task.title}</strong><span className="whitespace-nowrap text-sm text-stone-500">{clockLabel(task.scheduledStart)}~{clockLabel(task.scheduledEnd)}</span>{isComplete && <span className="rounded bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-800">완료</span>}</div><p className="mt-1 text-sm text-stone-600">{task.branch} · {task.importance} · 계획 {task.estimatedMinutes}분 / 실제 {actual}분 {overMinutes > 0 && <span className="font-bold text-rose-600"> · {overMinutes}분 초과</span>}</p></div>
+      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded px-2 py-1 text-xs font-bold text-white" style={{ background: meta.color }}>{task.category}</span><strong className="min-w-0 break-words">{task.title}</strong><span className="whitespace-nowrap text-sm text-stone-500">{clockLabel(task.scheduledStart)}~{clockLabel(task.scheduledEnd)}</span>{isComplete && <span className="rounded bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-800">완료</span>}{isPastPlannedTime && <span className="rounded bg-rose-100 px-2 py-1 text-xs font-bold text-rose-700">계획시간 지남</span>}</div><p className="mt-1 text-sm text-stone-600">{task.branch} · {task.importance} · 계획 {task.estimatedMinutes}분 / 실제 {actual}분 {overMinutes > 0 && <span className="font-bold text-rose-600"> · {overMinutes}분 초과</span>}</p></div>
       <div className="flex gap-1">
         {currentTask?.id === task.id ? <button aria-label="일시정지" onClick={pauseTimer} className="icon-btn"><Pause /></button> : <button aria-label="시작" onClick={() => startTimer(task.id)} className="icon-btn"><Play /></button>}
         <button aria-label="완료" onClick={() => stopTask(task)} className="icon-btn"><Square /></button>
