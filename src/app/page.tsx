@@ -85,6 +85,18 @@ function clockLabel(value: string | null) {
   return value?.slice(0, 5) || "--:--";
 }
 
+function normalizeClockDraft(value: string | null) {
+  if (!value?.trim()) return null;
+  const trimmed = value.trim();
+  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed)) return trimmed;
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return null;
+  const padded = digits.length <= 2 ? `${digits.padStart(2, "0")}00` : digits.padStart(4, "0").slice(-4);
+  const hour = Math.min(23, Number(padded.slice(0, 2)));
+  const minute = Math.min(59, Number(padded.slice(2, 4)));
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
 export default function AppPage() {
   const [tab, setTab] = useState<Tab>("오늘");
   const [data, setData] = useState<AppData>(emptyData());
@@ -495,10 +507,10 @@ function TaskForm({ task, setTask, onSave }: { task: Task; setTask: (task: Task)
       <div className="grid grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <Select label="상태" value={task.status} values={["수집됨", "이번 주", "진행 중", "확인 대기", "완료"]} onChange={(value) => setTask({ ...task, status: value as TaskStatus })} />
         <LabeledInput label="시작 시간">
-          <input type="time" aria-label="시작 시간" value={clockLabel(task.scheduledStart) === "--:--" ? "" : clockLabel(task.scheduledStart)} onChange={(event) => setTask({ ...task, scheduledStart: event.target.value || null })} className="field time-field" />
+          <TimeInput label="시작 시간" value={task.scheduledStart} onChange={(value) => setTask({ ...task, scheduledStart: value })} />
         </LabeledInput>
         <LabeledInput label="종료 시간">
-          <input type="time" aria-label="종료 시간" value={clockLabel(task.scheduledEnd) === "--:--" ? "" : clockLabel(task.scheduledEnd)} onChange={(event) => setTask({ ...task, scheduledEnd: event.target.value || null })} className="field time-field" />
+          <TimeInput label="종료 시간" value={task.scheduledEnd} onChange={(value) => setTask({ ...task, scheduledEnd: value })} />
         </LabeledInput>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -520,6 +532,21 @@ function LabeledInput({ label, help, children }: { label: string; help?: string;
     {help && <span className="text-[11px] font-normal leading-relaxed text-stone-500">{help}</span>}
     {children}
   </label>;
+}
+
+function TimeInput({ label, value, onChange }: { label: string; value: string | null; onChange: (value: string | null) => void }) {
+  const displayValue = value ? clockLabel(value) : "";
+  return <input
+    type="text"
+    inputMode="numeric"
+    aria-label={label}
+    value={displayValue}
+    onChange={(event) => onChange(event.target.value.replace(/[^\d:]/g, "").slice(0, 5) || null)}
+    onBlur={() => onChange(normalizeClockDraft(value))}
+    placeholder="13:30"
+    maxLength={5}
+    className="field time-field"
+  />;
 }
 
 function CategoryGuide({ category, open, setOpen }: { category: TaskCategory; open: boolean; setOpen: (value: boolean) => void }) {
