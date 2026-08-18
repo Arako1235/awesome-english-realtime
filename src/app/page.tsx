@@ -81,6 +81,10 @@ const emptyTask = (date = todaySeoul()): Task => ({
   updatedAt: nowIso()
 });
 
+function clockLabel(value: string | null) {
+  return value?.slice(0, 5) || "--:--";
+}
+
 export default function AppPage() {
   const [tab, setTab] = useState<Tab>("오늘");
   const [data, setData] = useState<AppData>(emptyData());
@@ -437,9 +441,11 @@ function TodayView(props: {
 function TaskRow({ task, data, patchTask, softDeleteTask, startTimer, pauseTimer, stopTask, currentTask, setTaskDraft, setEditingId }: { task: Task; data: AppData; patchTask: (id: string, patch: Partial<Task>) => void; softDeleteTask: (id: string) => void; startTimer: (taskId: string) => void; pauseTimer: () => void; stopTask: (task: Task) => void; currentTask: Task | null; setTaskDraft: (task: Task) => void; setEditingId: (id: string | null) => void }) {
   const meta = categoryMeta[task.category];
   const actual = actualMinutes(task, data.sessions);
-  return <div draggable onDragEnd={(event) => { const h = Math.max(13, Math.min(18, 13 + Math.round(event.clientY / 160))); patchTask(task.id, { scheduledStart: `${String(h).padStart(2, "0")}:00`, scheduledEnd: `${String(h + 1).padStart(2, "0")}:00` }); }} className="rounded-lg border border-black/10 bg-white p-3 shadow-soft">
+  const overMinutes = Math.max(0, actual - task.estimatedMinutes);
+  const isComplete = task.status === "완료";
+  return <div draggable onDragEnd={(event) => { const h = Math.max(13, Math.min(18, 13 + Math.round(event.clientY / 160))); patchTask(task.id, { scheduledStart: `${String(h).padStart(2, "0")}:00`, scheduledEnd: `${String(h + 1).padStart(2, "0")}:00` }); }} className={`rounded-lg border p-3 shadow-soft ${isComplete ? "border-emerald-200 bg-emerald-50/90" : "border-black/10 bg-white"}`}>
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><div className="flex flex-wrap items-center gap-2"><span className="rounded px-2 py-1 text-xs font-bold text-white" style={{ background: meta.color }}>{task.category}</span><strong>{task.title}</strong><span className="text-sm text-stone-500">{task.scheduledStart ?? "--:--"}~{task.scheduledEnd ?? "--:--"}</span></div><p className="mt-1 text-sm text-stone-600">{task.branch} · {task.importance} · 계획 {task.estimatedMinutes}분 / 실제 {actual}분 {actual > task.estimatedMinutes ? `· ${actual - task.estimatedMinutes}분 초과` : ""}</p></div>
+      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded px-2 py-1 text-xs font-bold text-white" style={{ background: meta.color }}>{task.category}</span><strong className="min-w-0 break-words">{task.title}</strong><span className="whitespace-nowrap text-sm text-stone-500">{clockLabel(task.scheduledStart)}~{clockLabel(task.scheduledEnd)}</span>{isComplete && <span className="rounded bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-800">완료</span>}</div><p className="mt-1 text-sm text-stone-600">{task.branch} · {task.importance} · 계획 {task.estimatedMinutes}분 / 실제 {actual}분 {overMinutes > 0 && <span className="font-bold text-rose-600"> · {overMinutes}분 초과</span>}</p></div>
       <div className="flex gap-1">
         {currentTask?.id === task.id ? <button aria-label="일시정지" onClick={pauseTimer} className="icon-btn"><Pause /></button> : <button aria-label="시작" onClick={() => startTimer(task.id)} className="icon-btn"><Play /></button>}
         <button aria-label="완료" onClick={() => stopTask(task)} className="icon-btn"><Square /></button>
@@ -486,13 +492,13 @@ function TaskForm({ task, setTask, onSave }: { task: Task; setTask: (task: Task)
           <input type="date" aria-label="업무 예정일" value={task.scheduledDate} onChange={(event) => setTask({ ...task, scheduledDate: event.target.value })} className="field" />
         </LabeledInput>
       </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(130px,1fr)_minmax(130px,1fr)]">
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <Select label="상태" value={task.status} values={["수집됨", "이번 주", "진행 중", "확인 대기", "완료"]} onChange={(value) => setTask({ ...task, status: value as TaskStatus })} />
         <LabeledInput label="시작 시간">
-          <input type="time" aria-label="시작 시간" value={task.scheduledStart ?? ""} onChange={(event) => setTask({ ...task, scheduledStart: event.target.value || null })} className="field time-field" />
+          <input type="time" aria-label="시작 시간" value={clockLabel(task.scheduledStart) === "--:--" ? "" : clockLabel(task.scheduledStart)} onChange={(event) => setTask({ ...task, scheduledStart: event.target.value || null })} className="field time-field" />
         </LabeledInput>
         <LabeledInput label="종료 시간">
-          <input type="time" aria-label="종료 시간" value={task.scheduledEnd ?? ""} onChange={(event) => setTask({ ...task, scheduledEnd: event.target.value || null })} className="field time-field" />
+          <input type="time" aria-label="종료 시간" value={clockLabel(task.scheduledEnd) === "--:--" ? "" : clockLabel(task.scheduledEnd)} onChange={(event) => setTask({ ...task, scheduledEnd: event.target.value || null })} className="field time-field" />
         </LabeledInput>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
