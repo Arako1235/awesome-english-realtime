@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { v4 as uuid } from "uuid";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { CalendarDays, ChevronDown, ClipboardList, Gauge, Home, Lightbulb, Loader2, Pause, Play, Plus, RefreshCw, Settings, Square, TimerReset, Trash2 } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Gauge, Home, Lightbulb, Loader2, Pause, Play, Plus, RefreshCw, Settings, Square, TimerReset, Trash2 } from "lucide-react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import type { AppData, Idea, IdeaStatus, RecurringTaskRule, Task, TaskCategory, TaskStatus, WeeklyMetric } from "@/lib/types";
 import { defaultSettings, emptyData, sampleData } from "@/lib/seed";
@@ -81,6 +81,12 @@ const emptyTask = (date = todaySeoul()): Task => ({
   updatedAt: nowIso()
 });
 
+function shiftDate(date: string, days: number) {
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) return todaySeoul();
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
 function clockLabel(value: string | null) {
   return value?.slice(0, 5) || "--:--";
 }
@@ -123,6 +129,7 @@ export default function AppPage() {
   const [tab, setTab] = useState<Tab>("오늘");
   const [data, setData] = useState<AppData>(emptyData());
   const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState(() => todaySeoul());
   const [taskDraft, setTaskDraft] = useState<Task>(() => emptyTask());
   const [quickIdea, setQuickIdea] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -206,13 +213,24 @@ export default function AppPage() {
   const currentTask = current ? (data.tasks.find((task) => task.id === current.taskId) ?? null) : null;
   const metric = getWeeklyMetric(data, weekStart);
 
+  function selectWorkDate(nextDate: string) {
+    const date = nextDate || today;
+    setSelectedDate(date);
+    if (editingId) return;
+    setTaskDraft((draft) => {
+      const hasDraftText = draft.title.trim() || draft.description.trim() || draft.outcomeMemo.trim();
+      if (hasDraftText || draft.scheduledDate === date) return draft;
+      return { ...draft, scheduledDate: date };
+    });
+  }
+
   async function saveTask(task: Task) {
     if (!task.title.trim()) return false;
     const normalized = { ...task, userId: session?.user.id ?? task.userId, workspaceId: data.settings.activeWorkspaceId, estimatedMinutes: task.estimatedMinutes || minutesBetweenClock(task.scheduledStart, task.scheduledEnd) || 30, updatedAt: nowIso() };
     const exists = data.tasks.some((item) => item.id === normalized.id);
     const saved = await persist({ ...data, tasks: exists ? data.tasks.map((item) => item.id === normalized.id ? normalized : item) : [...data.tasks, normalized] });
     if (saved) {
-      setTaskDraft(emptyTask(today));
+      setTaskDraft(emptyTask(selectedDate));
       setEditingId(null);
     }
     return saved;
@@ -371,7 +389,7 @@ export default function AppPage() {
           {supabase ? `실시간 동기화 모드입니다. ${session?.user.email ?? "로그인 계정"}으로 저장된 데이터가 집 웹과 PC에 함께 반영됩니다.` : "Supabase 환경변수가 없어서 로컬 데모 모드로 실행 중입니다. 배포 전 .env.local을 설정하면 실시간 동기화 모드가 켜집니다."}
         </div>
         {syncError && <div className="mb-5 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">{syncError}</div>}
-        {tab === "오늘" && <TodayView today={today} data={data} taskDraft={taskDraft} setTaskDraft={setTaskDraft} saveTask={saveTask} patchTask={patchTask} softDeleteTask={softDeleteTask} startTimer={startTimer} pauseTimer={pauseTimer} stopTask={stopTask} currentTask={currentTask} current={current} quickIdea={quickIdea} setQuickIdea={setQuickIdea} quickSaveIdea={quickSaveIdea} editingId={editingId} setEditingId={setEditingId} />}
+        {tab === "오늘" && <TodayView today={today} selectedDate={selectedDate} setSelectedDate={selectWorkDate} data={data} taskDraft={taskDraft} setTaskDraft={setTaskDraft} saveTask={saveTask} patchTask={patchTask} softDeleteTask={softDeleteTask} startTimer={startTimer} pauseTimer={pauseTimer} stopTask={stopTask} currentTask={currentTask} current={current} quickIdea={quickIdea} setQuickIdea={setQuickIdea} quickSaveIdea={quickSaveIdea} editingId={editingId} setEditingId={setEditingId} />}
         {tab === "이번 주" && <WeekView data={data} week={week} />}
         {tab === "반복업무" && <RecurringView data={data} persist={persist} />}
         {tab === "아이디어" && <IdeasView data={data} persist={persist} convertIdea={convertIdea} />}
@@ -435,15 +453,19 @@ function Nav({ tab, setTab, vertical = false }: { tab: Tab; setTab: (tab: Tab) =
 }
 
 function TodayView(props: {
-  today: string; data: AppData; taskDraft: Task; setTaskDraft: (task: Task) => void; saveTask: (task: Task) => Promise<boolean>; patchTask: (id: string, patch: Partial<Task>) => void; softDeleteTask: (id: string) => void; startTimer: (taskId: string) => void; pauseTimer: () => void; stopTask: (task: Task) => void; currentTask: Task | null; current: unknown; quickIdea: string; setQuickIdea: (value: string) => void; quickSaveIdea: () => void; editingId: string | null; setEditingId: (id: string | null) => void;
+  today: string; selectedDate: string; setSelectedDate: (date: string) => void; data: AppData; taskDraft: Task; setTaskDraft: (task: Task) => void; saveTask: (task: Task) => Promise<boolean>; patchTask: (id: string, patch: Partial<Task>) => void; softDeleteTask: (id: string) => void; startTimer: (taskId: string) => void; pauseTimer: () => void; stopTask: (task: Task) => void; currentTask: Task | null; current: unknown; quickIdea: string; setQuickIdea: (value: string) => void; quickSaveIdea: () => void; editingId: string | null; setEditingId: (id: string | null) => void;
 }) {
-  const tasks = props.data.tasks.filter((task) => !task.deletedAt && task.scheduledDate === props.today);
+  const tasks = props.data.tasks.filter((task) => !task.deletedAt && task.scheduledDate === props.selectedDate);
   const planned = tasks.reduce((sum, task) => sum + task.estimatedMinutes, 0);
   const actual = tasks.reduce((sum, task) => sum + actualMinutes(task, props.data.sessions), 0);
   const core = tasks.filter((task) => task.importance === "긴급" || task.importance === "높음").slice(0, 2);
   const totals = Object.entries(categoryMeta).map(([cat, meta]) => ({ name: cat, label: meta.label, value: tasks.filter((task) => task.category === cat).reduce((sum, task) => sum + actualMinutes(task, props.data.sessions), 0), color: meta.color }));
+  const isToday = props.selectedDate === props.today;
   return <div className="grid gap-5">
-    <Title title="오늘" subtitle={`${props.today} · 핵심업무 ${core.map((task) => task.title).join(", ") || "아직 없음"}`} />
+    <div className="grid gap-3">
+      <Title title={isToday ? "오늘" : "날짜별 업무"} subtitle={`${props.selectedDate} · 핵심업무 ${core.map((task) => task.title).join(", ") || "아직 없음"}`} />
+      <DateNavigator selectedDate={props.selectedDate} today={props.today} setSelectedDate={props.setSelectedDate} />
+    </div>
     <div className="grid gap-3 md:grid-cols-4">
       <Stat label="총 계획시간" value={`${planned}분`} />
       <Stat label="실제 사용시간" value={`${actual}분`} />
@@ -454,7 +476,7 @@ function TodayView(props: {
       <Panel title="13:00~19:00 시간표">
         <div className="grid gap-2">
           {tasks.sort((a, b) => (a.scheduledStart ?? "99").localeCompare(b.scheduledStart ?? "99")).map((task) => <TaskRow key={task.id} task={task} {...props} />)}
-          {!tasks.length && <Empty text="오늘 일정이 비어 있습니다. 오른쪽에서 업무를 추가해보세요." />}
+          {!tasks.length && <Empty text={`${isToday ? "오늘" : "선택한 날짜"} 일정이 비어 있습니다. 오른쪽에서 업무를 추가해보세요.`} />}
         </div>
       </Panel>
       <Panel title="업무 추가">
@@ -469,6 +491,27 @@ function TodayView(props: {
         <div className="flex gap-2"><input aria-label="아이디어 제목" value={props.quickIdea} onChange={(event) => props.setQuickIdea(event.target.value)} placeholder="제목만 적어도 저장됩니다" className="focus-ring min-w-0 flex-1 rounded-md border border-black/10 bg-white px-3 py-3" /><button onClick={props.quickSaveIdea} className="focus-ring rounded-md bg-idea px-4 py-3 font-semibold text-white"><Plus className="h-5 w-5" aria-hidden /></button></div>
       </Panel>
     </section>
+  </div>;
+}
+
+function DateNavigator({ selectedDate, today, setSelectedDate }: { selectedDate: string; today: string; setSelectedDate: (date: string) => void }) {
+  return <div className="grid gap-3 rounded-lg border border-black/10 bg-white/75 p-3 shadow-soft sm:grid-cols-[1fr_auto] sm:items-center">
+    <div>
+      <p className="text-sm font-semibold text-stone-800">업무 날짜</p>
+      <p className="mt-1 text-xs text-stone-500">{selectedDate === today ? "오늘 업무를 보고 있습니다." : "지난 날짜나 다른 날짜의 업무를 보고 있습니다."}</p>
+    </div>
+    <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] gap-2 sm:flex sm:items-center">
+      <button type="button" aria-label="이전 날짜" onClick={() => setSelectedDate(shiftDate(selectedDate, -1))} className="icon-btn">
+        <ChevronLeft />
+      </button>
+      <input type="date" aria-label="업무 날짜 선택" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value || today)} className="field min-w-0" />
+      <button type="button" aria-label="다음 날짜" onClick={() => setSelectedDate(shiftDate(selectedDate, 1))} className="icon-btn">
+        <ChevronRight />
+      </button>
+      <button type="button" onClick={() => setSelectedDate(today)} className="focus-ring col-span-3 rounded-md border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-stone-700 hover:bg-stone-50 sm:col-span-1">
+        오늘
+      </button>
+    </div>
   </div>;
 }
 
